@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSA Wait Times</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f7fa; --sur: #fff;
+      --bd: rgba(0,0,0,.08); --bd2: rgba(0,0,0,.15);
+      --tx: #111827; --txm: #6b7280; --txf: #9ca3af;
+      --r: 12px; --rs: 8px;
+      --sh: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+      --green: #15803d; --green-bg: #dcfce7;
+      --yellow: #b45309; --yellow-bg: #fef3c7;
+      --red: #b91c1c; --red-bg: #fee2e2;
+      --blue: #1d4ed8; --blue-bg: #dbeafe;
+    }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--tx); min-height: 100vh; }
+
+    .header { background: #1e3a5f; color: #fff; padding: 1.25rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-family: 'DM Serif Display', serif; font-size: 22px; font-weight: 400; }
+    .header p { font-size: 12px; color: rgba(255,255,255,.55); margin-top: 2px; }
+    .refresh-btn { padding: 8px 16px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); border-radius: var(--rs); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .refresh-btn:hover { background: rgba(255,255,255,.2); }
+    .spin { width: 12px; height: 12px; border: 1.5px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; display: none; animation: spin .75s linear infinite; }
+    .refresh-btn.busy .spin { display: block; }
+    .refresh-btn.busy .btn-t { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* ── Search / calculator ── */
+    .search-card { background: var(--sur); border: 1px solid var(--bd); border-radius: var(--r); padding: 1.5rem; box-shadow: var(--sh); margin-bottom: 1.5rem; }
+    .search-card h2 { font-family: 'DM Serif Display', serif; font-size: 20px; font-weight: 400; margin-bottom: 1rem; }
+    .search-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+    .field label { font-size: 12px; color: var(--txm); margin-bottom: 5px; display: block; }
+    .field select, .field input { width: 100%; padding: 9px 12px; border: 1px solid var(--bd2); border-radius: var(--rs); font-family: 'DM Sans', sans-serif; font-size: 13.5px; background: var(--sur); color: var(--tx); outline: none; }
+    .field select:focus, .field input:focus { border-color: #1e3a5f; }
+    .go-btn { padding: 9px 20px; background: #1e3a5f; border: none; border-radius: var(--rs); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+    .go-btn:hover { background: #162e4d; }
+
+    /* ── Result area ── */
+    .result { display: none; }
+    .result.show { display: block; }
+
+    .airport-title { font-family: 'DM Serif Display', serif; font-size: 24px; font-weight: 400; margin-bottom: 4px; }
+    .airport-meta { font-size: 13px; color: var(--txm); margin-bottom: 1.5rem; }
+
+    /* ── Stats row ── */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+    .stat { background: var(--sur); border: 1px solid var(--bd); border-radius: var(--r); padding: 1rem 1.25rem; box-shadow: var(--sh); }
+    .stat-label { font-size: 11px; color: var(--txf); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .stat-val { font-size: 26px; font-family: 'DM Serif Display', serif; font-weight: 400; }
+    .stat-sub { font-size: 12px; color: var(--txm); margin-top: 2px; }
+    .green { color: var(--green); }
+    .yellow { color: var(--yellow); }
+    .red { color: var(--red); }
+
+    /* ── Recommendation banner ── */
+    .rec-banner { border-radius: var(--r); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1.5rem; }
+    .rec-banner.green { background: var(--green-bg); border: 1px solid #bbf7d0; }
+    .rec-banner.yellow { background: var(--yellow-bg); border: 1px solid #fde68a; }
+    .rec-banner.red { background: var(--red-bg); border: 1px solid #fecaca; }
+    .rec-icon { font-size: 32px; flex-shrink: 0; }
+    .rec-main { font-size: 18px; font-weight: 500; }
+    .rec-sub { font-size: 13px; color: var(--txm); margin-top: 3px; }
+    .rec-breakdown { margin-left: auto; display: flex; gap: 16px; flex-shrink: 0; }
+    .rec-item { text-align: center; }
+    .rec-item-val { font-size: 16px; font-weight: 500; }
+    .rec-item-label { font-size: 10px; color: var(--txm); }
+
+    /* ── Two column layout ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 1.5rem; }
+    .card { background: var(--sur); border: 1px solid var(--bd); border-radius: var(--r); padding: 1.25rem; box-shadow: var(--sh); }
+    .card h3 { font-size: 14px; font-weight: 500; margin-bottom: 1rem; color: var(--tx); }
+
+    /* ── Hourly chart ── */
+    .chart-wrap { position: relative; height: 180px; }
+
+    /* ── Best/worst times ── */
+    .time-list { display: flex; flex-direction: column; gap: 6px; }
+    .time-row { display: flex; align-items: center; gap: 10px; }
+    .time-label { font-size: 13px; font-weight: 500; width: 50px; flex-shrink: 0; }
+    .time-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .time-fill { height: 100%; border-radius: 4px; }
+    .fill-green { background: #22c55e; }
+    .fill-yellow { background: #f59e0b; }
+    .fill-red { background: #ef4444; }
+    .time-tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; flex-shrink: 0; }
+    .tag-green { background: var(--green-bg); color: var(--green); }
+    .tag-yellow { background: var(--yellow-bg); color: var(--yellow); }
+    .tag-red { background: var(--red-bg); color: var(--red); }
+
+    /* ── Live wait times ── */
+    .wait-list { display: flex; flex-direction: column; gap: 8px; }
+    .wait-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: var(--bg); border-radius: var(--rs); }
+    .wait-name { font-size: 13px; color: var(--txm); }
+    .wait-badge { font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 20px; }
+    .no-data { font-size: 13px; color: var(--txf); text-align: center; padding: 1rem; }
+
+    /* ── Delay banner ── */
+    .delay-banner { background: var(--red-bg); border: 1px solid #fecaca; border-radius: var(--rs); padding: 10px 14px; margin-bottom: 1rem; font-size: 13px; color: var(--red); display: none; }
+    .delay-banner.show { display: block; }
+
+    /* ── Airport grid ── */
+    .airports-section { margin-top: 2rem; }
+    .airports-section h2 { font-family: 'DM Serif Display', serif; font-size: 20px; font-weight: 400; margin-bottom: 1rem; }
+    .airport-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+    .ap-card { background: var(--sur); border: 1px solid var(--bd); border-radius: var(--rs); padding: .9rem 1rem; box-shadow: var(--sh); cursor: pointer; transition: border-color .15s, transform .15s; }
+    .ap-card:hover { border-color: #1e3a5f; transform: translateY(-1px); }
+    .ap-code { font-size: 18px; font-weight: 500; color: #1e3a5f; }
+    .ap-name { font-size: 11.5px; color: var(--txm); margin-top: 2px; margin-bottom: 8px; }
+    .ap-status { font-size: 11px; padding: 2px 8px; border-radius: 20px; display: inline-block; }
+
+    .ts { font-size: 11px; color: var(--txf); margin-top: .5rem; }
+
+    @media (max-width: 700px) {
+      .search-row { grid-template-columns: 1fr 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .two-col { grid-template-columns: 1fr; }
+      .rec-breakdown { display: none; }
+      .airport-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>TSA Wait Times</h1>
+    <p>Real-time security wait estimates for US airports</p>
+  </div>
+  <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()">
+    <span class="spin"></span>
+    <span class="btn-t">&#8635; Refresh all</span>
+  </button>
+</div>
+
+<div class="main">
+
+  <!-- Search / Calculator -->
+  <div class="search-card">
+    <h2>When should I arrive?</h2>
+    <div class="search-row">
+      <div class="field">
+        <label>Airport</label>
+        <select id="airport-select">
+          <option value="">Select airport...</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Flight time</label>
+        <input type="time" id="flight-time" value="12:00">
+      </div>
+      <div class="field">
+        <label>TSA PreCheck?</label>
+        <select id="precheck-select">
+          <option value="false">No</option>
+          <option value="true">Yes</option>
+        </select>
+      </div>
+      <button class="go-btn" onclick="lookupAirport()">Calculate &#8594;</button>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div class="result" id="result">
+    <h2 class="airport-title" id="res-title">Chicago O'Hare (ORD)</h2>
+    <p class="airport-meta" id="res-meta">Data fetched just now</p>
+
+    <div id="shutdown-banner" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#b45309;">
+      &#9888; TSA workers are currently working without pay due to a government shutdown. Expect significantly longer wait times than usual — plan to arrive 30–60 minutes earlier than normal.
+    </div>
+    <div class="delay-banner" id="delay-banner">
+      &#9888; FAA is reporting active delays at this airport. Add extra buffer time.
+    </div>
+
+    <!-- Recommendation -->
+    <div class="rec-banner" id="rec-banner">
+      <div class="rec-icon" id="rec-icon">&#9992;</div>
+      <div>
+        <div class="rec-main" id="rec-main">Arrive 90 minutes before your flight</div>
+        <div class="rec-sub" id="rec-sub">Based on current wait times and historical patterns</div>
+      </div>
+      <div class="rec-breakdown" id="rec-breakdown"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Current busyness</div>
+        <div class="stat-val" id="s-busy">—</div>
+        <div class="stat-sub" id="s-busy-sub"></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Avg security wait</div>
+        <div class="stat-val" id="s-wait">—</div>
+        <div class="stat-sub" id="s-wait-sub">loading...</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Est. wait (PreCheck)</div>
+        <div class="stat-val" id="s-pre">—</div>
+        <div class="stat-sub" id="s-pre-sub">~50% less than standard</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">FAA status</div>
+        <div class="stat-val" id="s-faa">—</div>
+        <div class="stat-sub" id="s-faa-sub"></div>
+      </div>
+    </div>
+
+    <!-- Chart + Best times -->
+    <div class="two-col">
+      <div class="card">
+        <h3>Busyness by hour today</h3>
+        <div class="chart-wrap"><canvas id="hourly-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Best times to go through security</h3>
+        <div style="margin-bottom:10px;font-size:12px;color:var(--txm)">Best</div>
+        <div class="time-list" id="best-times"></div>
+        <div style="margin:10px 0 6px;font-size:12px;color:var(--txm)">Worst</div>
+        <div class="time-list" id="worst-times"></div>
+      </div>
+    </div>
+
+    <!-- FAA Delay details -->
+    <div class="card" style="margin-bottom:1.5rem" id="faa-card">
+      <h3>FAA delay details</h3>
+      <div class="wait-list" id="faa-detail-list"></div>
+    </div>
+
+    <p class="ts" id="result-ts"></p>
+  </div>
+
+  <!-- Airport grid -->
+  <div class="airports-section">
+    <h2>All airports</h2>
+    <div class="airport-grid" id="airport-grid"></div>
+    <p class="ts" id="data-ts"></p>
+  </div>
+</div>
+
+<script>
+let globalData = null;
+let hourlyChart = null;
+
+async function loadData() {
+  try {
+    const r = await fetch('/api/data');
+    if (!r.ok) return;
+    globalData = await r.json();
+    populateAirportSelect();
+    renderAirportGrid();
+    updateTs();
+  } catch(e) { console.error(e); }
+}
+
+function populateAirportSelect() {
+  if (!globalData) return;
+  const sel = document.getElementById('airport-select');
+  sel.innerHTML = '<option value="">Select airport...</option>';
+  (globalData.airport_list || []).forEach(ap => {
+    const opt = document.createElement('option');
+    opt.value = ap.code;
+    opt.textContent = `${ap.code} — ${ap.name}`;
+    sel.appendChild(opt);
+  });
+}
+
+function renderAirportGrid() {
+  if (!globalData) return;
+  const grid = document.getElementById('airport-grid');
+  const airports = globalData.airports || {};
+  const entries = Object.entries(airports);
+
+  if (entries.length === 0) {
+    grid.innerHTML = '<p style="color:var(--txf);font-size:13px">No airport data yet — click Refresh all to load.</p>';
+    return;
+  }
+
+  // Sort alphabetically by code
+  entries.sort((a, b) => a[0].localeCompare(b[0]));
+
+  grid.innerHTML = entries.map(([code, data]) => {
+    const busy = data.current_busyness || {};
+    const colorClass = busy.color === 'success' ? 'tag-green' : busy.color === 'warning' ? 'tag-yellow' : 'tag-red';
+    const hasDelay = data.has_delay;
+    const avgWait = data.tsawait && data.tsawait.avg_minutes != null ? `${data.tsawait.avg_minutes}m avg` : '';
+    return `
+      <div class="ap-card" onclick="selectAirport('${code}')">
+        <div class="ap-code">${code}</div>
+        <div class="ap-name">${data.airport_name || code}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+          <span class="ap-status ${colorClass}">${busy.label || 'Unknown'}</span>
+          ${hasDelay ? '<span class="ap-status tag-red">Delays</span>' : ''}
+          ${avgWait ? `<span class="ap-status" style="background:var(--bg);color:var(--txm)">${avgWait}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function selectAirport(code) {
+  document.getElementById('airport-select').value = code;
+  lookupAirport();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function lookupAirport() {
+  const code = document.getElementById('airport-select').value;
+  if (!code) return;
+  const timeVal = document.getElementById('flight-time').value || '12:00';
+  const flightHour = parseInt(timeVal.split(':')[0]);
+  const precheck = document.getElementById('precheck-select').value;
+
+  try {
+    const r = await fetch(`/api/airport/${code}?flight_hour=${flightHour}&precheck=${precheck}`);
+    const data = await r.json();
+    renderResult(data);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderResult(data) {
+  document.getElementById('result').classList.add('show');
+
+  // Title
+  document.getElementById('res-title').textContent = `${data.airport_name} (${data.airport_code})`;
+  const fetched = new Date(data.fetched_at);
+  document.getElementById('res-meta').textContent = `Data fetched ${fetched.toLocaleTimeString()}`;
+
+  // Delay banner
+  const delayBanner = document.getElementById('delay-banner');
+  delayBanner.classList.toggle('show', data.faa_delays?.has_delay);
+
+  // Recommendation
+  const rec = data.recommendation || {};
+  const mins = rec.total_minutes || 90;
+  const timeVal = document.getElementById('flight-time').value || '12:00';
+  const [fh, fm] = timeVal.split(':').map(Number);
+  const arriveDate = new Date();
+  arriveDate.setHours(fh, fm - mins, 0);
+  const arriveStr = arriveDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  const banner = document.getElementById('rec-banner');
+  const busy = data.current_busyness || {};
+  banner.className = 'rec-banner ' + (busy.color === 'success' ? 'green' : busy.color === 'warning' ? 'yellow' : 'red');
+  document.getElementById('rec-main').textContent = `Arrive by ${arriveStr} — ${mins} minutes before your flight`;
+  const recSource = (data.recommendation || {}).source || 'historical estimate';
+  document.getElementById('rec-sub').textContent = `Based on ${recSource}`;
+
+  // Breakdown
+  const bd = rec.breakdown || {};
+  document.getElementById('rec-breakdown').innerHTML = Object.entries({
+    'Gate buffer': bd.gate_buffer,
+    'Security + walk': bd.security_walk,
+    'Wait time': bd.wait_time,
+    'Delay buffer': bd.delay_buffer,
+  }).filter(([,v]) => v > 0).map(([k,v]) => `
+    <div class="rec-item">
+      <div class="rec-item-val">${v}m</div>
+      <div class="rec-item-label">${k}</div>
+    </div>`).join('');
+
+  // Stats
+  const busyEl = document.getElementById('s-busy');
+  busyEl.textContent = busy.label || '—';
+  busyEl.className = 'stat-val ' + (busy.color === 'success' ? 'green' : busy.color === 'warning' ? 'yellow' : 'red');
+  document.getElementById('s-busy-sub').textContent = `Score: ${busy.score || 0}/100`;
+
+  const tsawait = data.tsawait || {};
+  const score = (data.current_busyness || {}).score || 50;
+  const recWait = data.recommendation || {};
+  const secWait = recWait.breakdown ? recWait.breakdown.security_wait : null;
+  const precheck = document.getElementById('precheck-select').value === 'true';
+
+  // Show the wait time for the selected flight hour
+  const flightHr = parseInt((document.getElementById('flight-time').value || '12:00').split(':')[0]);
+  const secHr = Math.max(0, flightHr - 1);
+  const hourly = tsawait.hourly || [];
+  const slot = hourly.find(h => h.hour === secHr) || hourly.reduce((a,b) => Math.abs(b.hour-secHr) < Math.abs(a.hour-secHr) ? b : a, hourly[0]);
+
+  const displayWait = slot ? slot.minutes : (secWait || Math.round(score * 0.4));
+  const displayPre  = Math.round(displayWait * 0.5);
+  const waitSource  = slot ? slot.period : 'historical estimate';
+
+  document.getElementById('s-wait').textContent = `~${displayWait} min`;
+  document.getElementById('s-wait-sub').textContent = slot ? slot.period : 'historical estimate';
+  document.getElementById('s-pre').textContent  = `~${displayPre} min`;
+  document.getElementById('s-pre-sub').textContent = waitSource;
+
+  // Show shutdown banner if tsawaittimes reports it
+  const shutdownBanner = document.getElementById('shutdown-banner');
+  if (tsawait.has_shutdown_notice) shutdownBanner.style.display = 'block';
+  else shutdownBanner.style.display = 'none';
+
+  // Show PreCheck info if available
+  if (tsawait.precheck_info && tsawait.precheck_info.length > 0) {
+    const faaList = document.getElementById('faa-detail-list');
+    const precheckHtml = tsawait.precheck_info.map(p =>
+      `<div class="wait-row"><span class="wait-name">PreCheck</span><span class="wait-badge ${p.includes('Open') ? 'tag-green' : 'tag-red'}">${p}</span></div>`
+    ).join('');
+    faaList.innerHTML = (faaList.innerHTML || '') + precheckHtml;
+    document.getElementById('faa-card').style.display = 'block';
+  }
+
+  const faaEl = document.getElementById('s-faa');
+  const hasDel = data.faa_delays?.has_delay;
+  faaEl.textContent = hasDel ? 'Delays' : 'On time';
+  faaEl.className = 'stat-val ' + (hasDel ? 'red' : 'green');
+  document.getElementById('s-faa-sub').textContent = hasDel ? 'FAA reporting issues' : 'No reported issues';
+
+  // Hourly chart — use real data from tsawaittimes if available
+  const times = data.best_worst_times || {};
+  let hours = times.all || [];
+  if (tsawait.hourly && tsawait.hourly.length > 0) {
+    hours = renderHourlyChartFromReal(tsawait.hourly);
+  }
+  renderHourlyChart(hours);
+
+  // Best/worst
+  renderTimeLists(times.best || [], times.worst || []);
+
+  // FAA delay details
+  renderFAADetails(data.faa_delays || []);
+
+  document.getElementById('result-ts').textContent = `Last updated: ${fetched.toLocaleString()}`;
+}
+
+function renderHourlyChartFromReal(realHourly) {
+  // Convert tsawaittimes hourly format to chart format
+  return realHourly.map(h => {
+    const match = h.period.match(/(\d+)\s*(am|pm)/i);
+    let hour = 0;
+    if (match) {
+      hour = parseInt(match[1]);
+      if (match[2].toLowerCase() === 'pm' && hour !== 12) hour += 12;
+      if (match[2].toLowerCase() === 'am' && hour === 12) hour = 0;
+    }
+    const hd = hour % 12 || 12;
+    const suf = hour < 12 ? 'am' : 'pm';
+    return { hour, score: Math.min(100, h.minutes * 2), label: `${hd}${suf}`, realMinutes: h.minutes };
+  });
+}
+
+function renderHourlyChart(hours) {
+  const ctx = document.getElementById('hourly-chart').getContext('2d');
+  if (hourlyChart) hourlyChart.destroy();
+
+  const now = new Date().getHours();
+  const colors = hours.map(h => {
+    const base = h.score < 40 ? 'rgba(34,197,94,' : h.score < 70 ? 'rgba(245,158,11,' : 'rgba(239,68,68,';
+    return base + (h.hour === now ? '1)' : '0.6)');
+  });
+
+  hourlyChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: hours.map(h => h.label),
+      datasets: [{
+        data: hours.map(h => h.score),
+        backgroundColor: colors,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { display: false, max: 110 },
+        x: { ticks: { font: { size: 10 }, color: '#9ca3af' }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderTimeLists(best, worst) {
+  document.getElementById('best-times').innerHTML = best.map(t => `
+    <div class="time-row">
+      <span class="time-label">${t.label}</span>
+      <div class="time-track"><div class="time-fill fill-green" style="width:${t.score}%"></div></div>
+      <span class="time-tag tag-green">${t.score < 20 ? 'Very light' : 'Light'}</span>
+    </div>`).join('');
+
+  document.getElementById('worst-times').innerHTML = worst.map(t => `
+    <div class="time-row">
+      <span class="time-label">${t.label}</span>
+      <div class="time-track"><div class="time-fill fill-red" style="width:${t.score}%"></div></div>
+      <span class="time-tag tag-red">${t.score > 80 ? 'Very busy' : 'Busy'}</span>
+    </div>`).join('');
+}
+
+function renderFAADetails(delays) {
+  const list = document.getElementById('faa-detail-list');
+  const card = document.getElementById('faa-card');
+  if (!delays || delays.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  list.innerHTML = delays.map(d => {
+    let detail = d.reason || '';
+    if (d.min && d.max) detail += ` · ${d.min}–${d.max} delay`;
+    if (d.trend) detail += ` (${d.trend})`;
+    if (d.avg) detail += ` · Avg ${d.avg}`;
+    if (d.end_time) detail += ` · Until ${d.end_time}`;
+    return `
+      <div class="wait-row">
+        <span class="wait-name">${d.type}${d.direction ? ' (' + d.direction + ')' : ''}</span>
+        <span class="wait-badge tag-red">${detail || 'Active'}</span>
+      </div>`;
+  }).join('');
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('busy'); btn.disabled = true;
+  try {
+    await fetch('/api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    const poll = setInterval(async () => {
+      const s = await fetch('/api/refresh/status').then(r => r.json());
+      if (!s.running) {
+        clearInterval(poll);
+        btn.classList.remove('busy'); btn.disabled = false;
+        await loadData();
+      }
+    }, 2000);
+  } catch(e) {
+    btn.classList.remove('busy'); btn.disabled = false;
+  }
+}
+
+function updateTs() {
+  if (!globalData) return;
+  const d = new Date(globalData.last_updated);
+  document.getElementById('data-ts').textContent = `Last updated: ${d.toLocaleString()}`;
+}
+
+loadData();
+</script>
+</body>
+</html>
