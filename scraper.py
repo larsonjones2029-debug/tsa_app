@@ -292,8 +292,6 @@ def run_scraper(airport_codes=None):
     return output
 
 
-if __name__ == "__main__":
-    run_scraper()
 
 
 # ── tsawaittimes.com scraper ──────────────────────────────────────────────────
@@ -437,3 +435,6 @@ def get_wait_for_hour(tsawait, flight_hour):
     # Fall back to nearest slot
     closest = min(hourly, key=lambda s: abs(s["hour"] - security_hour))
     return closest["minutes"], closest["period"]
+
+if __name__ == "__main__":
+    run_scraper()
